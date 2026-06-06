@@ -108,7 +108,24 @@ function fmtPhone(p) {
 
 // ── DB (server-side JSON file) ─────────────────────────────────────────────────
 function loadDB() {
-  try { if (fs.existsSync(DB_FILE)) return JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch(e) {}
+  // Try primary file
+  try { if (fs.existsSync(DB_FILE)) return JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch (e) {
+    console.error('[loadDB] db.json corrupted:', e.message, '— trying rolling backups');
+  }
+  // Fall back to most recent rolling backup (newest first)
+  try {
+    const backups = fs.readdirSync(path.join(__dirname, 'data'))
+      .filter(f => /^db\.backup-.*\.json$/.test(f))
+      .sort().reverse();
+    for (const f of backups) {
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', f), 'utf8'));
+        console.warn(`[loadDB] Recovered from backup: ${f}`);
+        return data;
+      } catch (_) {}
+    }
+  } catch (_) {}
+  console.error('[loadDB] All backups failed — starting with empty DB!');
   return { customers: [], campaigns: [], optOuts: [], settings: {} };
 }
 let _lastBackupAt = 0;
@@ -200,6 +217,16 @@ function migratePayloadsFromDB() {
   savePayloads(p);
   saveDB(db);
 }
+// ── Startup: remove any stale .tmp files left by a crash during a write ───────
+for (const stale of [DB_FILE + '.tmp', PAYLOAD_FILE + '.tmp', OVERLAY_FILE + '.tmp']) {
+  try {
+    if (fs.existsSync(stale)) {
+      fs.unlinkSync(stale);
+      console.warn(`[Startup] Removed stale temp file: ${path.basename(stale)}`);
+    }
+  } catch (_) {}
+}
+
 migratePayloadsFromDB();
 
 // ── ONE-TIME MIGRATION: squareId → squareIds array ─────────────────────────────
@@ -1906,6 +1933,22 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`Restaurant CRM running at http://localhost:${PORT}`);
   console.log('Accessible on network at http://<NAS-IP>:3001');
 });
+
+// ── Graceful shutdown — let in-flight DB writes finish before exiting ──────────
+function gracefulShutdown(signal) {
+  console.log(`[Shutdown] ${signal} — waiting for in-flight writes…`);
+  const killer = setTimeout(() => {
+    console.error('[Shutdown] Timed out — forcing exit');
+    process.exit(1);
+  }, 10_000);
+  _dbQueue.finally(() => {
+    clearTimeout(killer);
+    console.log('[Shutdown] Clean exit');
+    process.exit(0);
+  });
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
 
 // ── AUTOMATION HELPERS ─────────────────────────────────────────────────────────
 const DEFAULT_AUTOMATIONS = [
