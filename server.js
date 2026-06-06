@@ -1434,32 +1434,64 @@ const server = http.createServer(async (req, res) => {
           const sq = data.customer;
           if (sq) {
             const sqToken = db.settings?.squareToken;
-            // Fetch backfill orders BEFORE acquiring the DB lock (async, no lock held)
-            let backfillOrders = [];
+            // Phase 1: Fetch orders BEFORE acquiring the DB lock (async, no lock held)
+            let initialOrders = [], extraOrders = [];
             try {
               if (sqToken) {
+                const locationIds = await fetchLocationIds(sqToken);
+
                 if (type === 'customer.updated') {
+                  // Recent window only — enough to catch orders that triggered the update
+                  // and discover any newly linked squareIds from them
                   const since = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
                   const r = await squarePost(sqToken, '/orders/search', {
-                    location_ids: await fetchLocationIds(sqToken),
+                    location_ids: locationIds,
                     query: { filter: { customer_filter: { customer_ids: [sq.id] }, date_time_filter: { updated_at: { start_at: since } }, state_filter: { states: ['COMPLETED', 'OPEN'] } } },
                     limit: 10,
                   });
-                  backfillOrders = r.orders || [];
+                  initialOrders = r.orders || [];
                 } else {
-                  const r = await squarePost(sqToken, '/orders/search', {
-                    location_ids: await fetchLocationIds(sqToken),
-                    query: { filter: { customer_filter: { customer_ids: [sq.id] } } },
-                    limit: 20,
-                  });
-                  backfillOrders = r.orders || [];
+                  // New customer: paginate through full order history
+                  let cursor = null, pages = 0;
+                  do {
+                    const body = { location_ids: locationIds, query: { filter: { customer_filter: { customer_ids: [sq.id] } } }, limit: 500 };
+                    if (cursor) body.cursor = cursor;
+                    const r = await squarePost(sqToken, '/orders/search', body);
+                    initialOrders.push(...(r.orders || []));
+                    cursor = r.cursor;
+                    pages++;
+                  } while (cursor && pages < 10);
+                }
+
+                // Collect all customer_ids from returned orders → discover old/merged squareIds
+                const seenIds   = new Set(initialOrders.map(o => o.customer_id).filter(Boolean));
+                const newOldIds = [...seenIds].filter(id => id !== sq.id);
+
+                // Fetch full order history for any newly discovered old squareIds
+                if (newOldIds.length > 0) {
+                  console.log(`[SquareWebhook] ${sq.id} — discovered ${newOldIds.length} linked squareId(s): ${newOldIds.join(', ')}`);
+                  let cursor2 = null, pages2 = 0;
+                  do {
+                    const body = { location_ids: locationIds, query: { filter: { customer_filter: { customer_ids: newOldIds } } }, limit: 500 };
+                    if (cursor2) body.cursor = cursor2;
+                    const r = await squarePost(sqToken, '/orders/search', body);
+                    extraOrders.push(...(r.orders || []));
+                    cursor2 = r.cursor;
+                    pages2++;
+                  } while (cursor2 && pages2 < 10);
                 }
               }
             } catch(e) {
-              console.warn(`[SquareWebhook] Backfill order fetch failed for ${sq.id}:`, e.message);
+              console.warn(`[SquareWebhook] Order fetch failed for ${sq.id}:`, e.message);
             }
 
-            // Apply profile + backfill atomically on fresh DB state
+            // Deduplicate orders by ID and collect the full set of discovered squareIds
+            const orderMap = new Map();
+            for (const o of [...initialOrders, ...extraOrders]) orderMap.set(o.id, o);
+            const allOrders        = [...orderMap.values()];
+            const allDiscoveredIds = new Set([sq.id, ...allOrders.map(o => o.customer_id).filter(Boolean)]);
+
+            // Apply profile + link discovered squareIds + backfill — all atomically
             await withDB(freshDb => {
               const result = applySquareProfile(sq, freshDb);
               const phone  = sq.phone_number ? fmtPhone(sq.phone_number) : '';
@@ -1470,9 +1502,22 @@ const server = http.createServer(async (req, res) => {
                   ? `New customer: ${freshC.firstName} ${freshC.lastName}`.trim()
                   : `Updated: ${freshC.firstName} ${freshC.lastName}`.trim();
                 console.log(`[SquareWebhook] ${result === 'added' ? 'Added' : 'Updated'} customer ${freshC.id}`);
+
+                // Link any newly discovered old squareIds
+                if (!Array.isArray(freshC.squareIds)) freshC.squareIds = [sq.id];
+                let linked = 0;
+                for (const id of allDiscoveredIds) {
+                  if (!freshC.squareIds.includes(id)) { freshC.squareIds.push(id); linked++; }
+                }
+                if (linked) {
+                  log.detail += ` | +${linked} squareId(s) linked`;
+                  console.log(`[SquareWebhook] Linked ${linked} old squareId(s) to ${freshC.firstName} ${freshC.lastName}`);
+                }
+
+                // Backfill orders — skip already processed, skip orders with no payment tender
                 if (!Array.isArray(freshDb.processedOrderIds)) freshDb.processedOrderIds = [];
                 let backfilled = 0;
-                for (const order of backfillOrders) {
+                for (const order of allOrders) {
                   if (freshDb.processedOrderIds.includes(order.id)) continue;
                   if (!order.tenders || order.tenders.length === 0) continue;
                   freshDb.processedOrderIds.unshift(order.id);
