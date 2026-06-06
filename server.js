@@ -1403,13 +1403,14 @@ const server = http.createServer(async (req, res) => {
 
         // Signature verification (skip only if no secret configured)
         if (secret) {
-          const sig   = req.headers['x-square-hmacsha256-signature'] || '';
-          const proto = req.headers['x-forwarded-proto'] || 'https';
-          const host  = req.headers['x-forwarded-host'] || req.headers.host || '';
-          const url   = `${proto}://${host}/api/square-webhook`;
+          const sig      = req.headers['x-square-hmacsha256-signature'] || '';
+          const crmBase  = (db.settings?.crmBaseUrl || '').replace(/\/$/, '');
+          const proto    = req.headers['x-forwarded-proto'] || 'https';
+          const host     = req.headers['x-forwarded-host'] || req.headers.host || '';
+          const url      = crmBase ? `${crmBase}/api/square-webhook` : `${proto}://${host}/api/square-webhook`;
           const expected = crypto.createHmac('sha256', secret).update(url + raw).digest('base64');
           if (sig !== expected) {
-            console.warn('[SquareWebhook] Signature mismatch — rejected. Got:', sig, 'Expected:', expected);
+            console.warn(`[SquareWebhook] Signature mismatch — rejected. URL used: ${url} | Got: ${sig} | Expected: ${expected}`);
             res.writeHead(401, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Invalid signature' }));
             return;

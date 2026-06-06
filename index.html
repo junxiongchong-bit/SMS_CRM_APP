@@ -208,6 +208,11 @@
         <input class="input" id="set-sq-webhook-secret" type="text" placeholder="Paste signature key from Square Developer Dashboard" autocomplete="off" style="font-family:monospace;letter-spacing:.05em">
         <div class="muted" style="margin-top:4px">Square Developer Dashboard → Webhooks → your subscription → Signature key. Webhook URL: <code id="webhook-url-display"></code></div>
       </div>
+      <div class="form-row">
+        <label class="label">CRM Public URL</label>
+        <input class="input" id="set-crm-base-url" type="text" placeholder="https://crm.woodpeckers.pizza">
+        <div class="muted" style="margin-top:4px">The public URL this CRM is accessible at. Used to verify Square webhook signatures correctly when behind a reverse proxy.</div>
+      </div>
       <hr style="border-color:var(--border);margin:16px 0">
       <div class="form-row">
         <label class="label">Cellcast API Key</label>

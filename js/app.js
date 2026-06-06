@@ -244,7 +244,9 @@ function renderSettings() {
   document.getElementById('set-feedback-base-url').value  = db.settings.feedbackBaseUrl      || '';
   document.getElementById('set-send-limit').value         = db.settings.sendLimit            || '';
   document.getElementById('set-sms-cost').value           = db.settings.smsCostCents         || '';
-  document.getElementById('webhook-url-display').textContent = `https://crm.woodpeckers.pizza/api/square-webhook`;
+  const crmBase = (db.settings.crmBaseUrl || 'https://crm.woodpeckers.pizza').replace(/\/$/, '');
+  document.getElementById('webhook-url-display').textContent = `${crmBase}/api/square-webhook`;
+  document.getElementById('set-crm-base-url').value = db.settings.crmBaseUrl || '';
   onSenderTypeChange();
   const limitNote = document.getElementById('safeguard-limit-note');
   if (limitNote) {
@@ -315,6 +317,7 @@ async function saveSettings() {
                            : null,
     testPhone:           document.getElementById('set-test-phone').value.trim(),
     feedbackBaseUrl:     document.getElementById('set-feedback-base-url').value.trim(),
+    crmBaseUrl:          document.getElementById('set-crm-base-url').value.trim().replace(/\/$/, '') || null,
     sendLimit:           parseInt(document.getElementById('set-send-limit').value) || null,
     smsCostCents:        parseInt(document.getElementById('set-sms-cost').value) || 9,
   };
