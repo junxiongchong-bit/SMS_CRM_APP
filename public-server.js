@@ -14,6 +14,8 @@ const ALLOWED_API_PATHS = new Set([
   '/api/feedback/check',
   '/api/feedback',
   '/api/feedback/redirect',
+  '/api/sms-inbound',
+  '/webhook',
 ]);
 
 function proxyToMain(req, res) {

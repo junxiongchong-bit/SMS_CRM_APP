@@ -604,7 +604,8 @@ function cellcastPost(apiKey, payload) {
 
 async function sendCellcastSMS(apiKey, sender, recipients, message) {
   const hasPersonalisation = /\{first_name\}|\{name\}/i.test(message);
-  const siteBase = (loadDB().settings?.feedbackBaseUrl || 'https://crm.ittopizza.com.au').replace(/\/$/, '');
+  const _siteDb  = loadDB();
+  const siteBase = (_siteDb.settings?.crmBaseUrl || _siteDb.settings?.feedbackBaseUrl || 'https://crm.woodpeckers.pizza').replace(/\/$/, '');
 
   const payload = (msg, contacts) => {
     const p = { message: msg, contacts, reply_url: `${siteBase}/webhook` };
@@ -1766,7 +1767,7 @@ const server = http.createServer(async (req, res) => {
         const apiKey  = db.settings?.cellcastKey;
         const sender  = db.settings?.cellcastSender || null;
         const testPhone = db.settings?.testPhone;
-        const base    = (baseUrl || db.settings?.feedbackBaseUrl || 'https://crm.woodpeckers.pizza').replace(/\/$/, '');
+        const base    = (baseUrl || db.settings?.crmBaseUrl || db.settings?.feedbackBaseUrl || 'https://crm.woodpeckers.pizza').replace(/\/$/, '');
 
         if (!apiKey)              throw new Error('Cellcast API key not configured — set it in Settings.');
         if (!customerIds?.length) throw new Error('No customers selected.');
@@ -2584,7 +2585,7 @@ async function runFeedbackAutomation() {
   const db      = loadDB();
   const apiKey  = db.settings?.cellcastKey;
   const sender  = db.settings?.cellcastSender || null;
-  const base    = (db.settings?.feedbackBaseUrl || 'https://crm.woodpeckers.pizza').replace(/\/$/, '');
+  const base    = (db.settings?.crmBaseUrl || db.settings?.feedbackBaseUrl || 'https://crm.woodpeckers.pizza').replace(/\/$/, '');
   const template = db.settings?.feedbackTemplate || 'Hi {name}, how was your Woodpeckers Murdoch order? {link}\nReply STOP to opt out.';
 
   if (!db.settings?.feedbackAutoEnabled) { console.log('[FeedbackAuto] Disabled, skipping.'); return; }
