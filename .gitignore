@@ -1,0 +1,20 @@
+# Customer data — never commit PII
+data/
+
+# Logs
+*.log
+
+# Temp files
+*.tmp
+sms_payloads_tmp.json
+
+# Claude Code settings
+.claude/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db

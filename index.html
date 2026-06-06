@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Restaurant CRM</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<nav>
+  <span class="nav-title">🍕 CRM</span>
+  <button class="nav-tab active" onclick="goPage('customers',this)">👥 Customers</button>
+  <button class="nav-tab" onclick="goPage('campaigns',this)">📨 Campaigns</button>
+  <button class="nav-tab" onclick="goPage('segments',this)">🏷 Segments</button>
+  <button class="nav-tab" onclick="goPage('automations',this)">⚡ Automations</button>
+  <button class="nav-tab" onclick="goPage('replies',this)">💬 Replies</button>
+  <button class="nav-tab" onclick="goPage('feedback',this)">⭐ Feedback</button>
+  <button class="nav-tab" onclick="goPage('settings',this)">⚙ Settings</button>
+</nav>
+
+<main>
+
+  <!-- CUSTOMERS -->
+  <div id="page-customers" class="page active">
+    <div class="fb">
+      <h2>Customers</h2>
+      <div class="flex">
+        <button id="sync-btn" class="btn btn-ghost" onclick="syncSquareCustomers()" title="Sync loyalty points from Square">⟳ Sync Square</button>
+        <button id="optout-sync-btn" class="btn btn-ghost" onclick="syncOptOuts()">📵 Sync Opt-outs</button>
+        <input type="file" id="csv-import-input" accept=".csv" style="display:none" onchange="importSquareCSV(this)">
+        <button id="csv-import-btn" class="btn btn-ghost" onclick="document.getElementById('csv-import-input').click()" title="One-time import from Square CSV export to seed visit/spend baseline">📥 Import CSV</button>
+        <button class="btn btn-primary" onclick="sendToSelected()">📤 Send SMS</button>
+      </div>
+    </div>
+
+    <div class="card-grid" id="cust-stats"></div>
+
+    <div class="segment-bar">
+      <button class="segment-btn active" data-seg="all"       onclick="setSegment('all')">All</button>
+      <button class="segment-btn"        data-seg="has-phone" onclick="setSegment('has-phone')">Has Phone</button>
+      <button class="segment-btn"        data-seg="has-email" onclick="setSegment('has-email')">Has Email</button>
+      <button class="segment-btn"        data-seg="birthday"  onclick="setSegment('birthday')">🎂 Birthday This Month</button>
+      <button class="segment-btn"        data-seg="opt-out"   onclick="setSegment('opt-out')">Opted Out</button>
+    </div>
+
+    <div class="flex" style="margin-bottom:10px;gap:10px">
+      <div class="search-bar" style="flex:1;max-width:340px">
+        <input class="input" id="cust-search" placeholder="Search name, phone, email, tag…"
+          oninput="_custSearch=this.value;_custPage=0;renderCustomers()">
+      </div>
+    </div>
+
+    <!-- Selection bar -->
+    <div id="cust-selection-bar" class="flex" style="display:none;background:rgba(78,158,255,.08);border:1px solid rgba(78,158,255,.2);border-radius:8px;padding:8px 14px;margin-bottom:10px">
+      <span style="color:var(--accent);font-size:.85rem"><strong id="cust-selected-count">0</strong> selected</span>
+      <button class="btn btn-ghost btn-sm" onclick="selectAllVisible()">Select all visible</button>
+      <button class="btn btn-ghost btn-sm" onclick="clearSelection()">Clear</button>
+      <button class="btn btn-primary btn-sm" onclick="sendToSelected()">📤 Send SMS to selected</button>
+    </div>
+
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="table-scroll">
+      <table><thead><tr>
+        <th style="width:32px"></th>
+        <th class="sortable" onclick="sortBy('name')">Name <span class="sort-icon" data-col="name"></span></th>
+        <th class="sortable" onclick="sortBy('phone')">Phone <span class="sort-icon" data-col="phone"></span></th>
+        <th class="sortable" onclick="sortBy('segment')">Segment <span class="sort-icon" data-col="segment"></span></th>
+        <th class="sortable" onclick="sortBy('smsStatus')">SMS <span class="sort-icon" data-col="smsStatus"></span></th>
+        <th class="sortable" onclick="sortBy('loyaltyPoints')">Loyalty <span class="sort-icon" data-col="loyaltyPoints"></span></th>
+        <th class="sortable" onclick="sortBy('visits')">Visits <span class="sort-icon" data-col="visits"></span></th>
+        <th class="sortable" onclick="sortBy('lastVisit')">Last Visit <span class="sort-icon" data-col="lastVisit"></span></th>
+        <th class="sortable" onclick="sortBy('lifetimeSpend')">Spend <span class="sort-icon" data-col="lifetimeSpend"></span></th>
+        <th class="sortable" onclick="sortBy('createdAt')">Since <span class="sort-icon" data-col="createdAt"></span></th>
+        <th class="sortable" onclick="sortBy('birthday')">Birthday <span class="sort-icon" data-col="birthday"></span></th>
+        <th></th>
+      </tr></thead>
+      <tbody id="cust-table"></tbody></table>
+      </div>
+      <div id="cust-pagination"></div>
+    </div>
+  </div>
+
+  <!-- CAMPAIGNS -->
+  <div id="page-campaigns" class="page">
+    <div class="fb">
+      <h2>Campaigns</h2>
+      <button class="btn btn-primary" onclick="openNewCampaign()">+ New Campaign</button>
+    </div>
+
+    <!-- Compose card -->
+    <div class="card" id="campaign-compose-card" style="display:none">
+      <div style="font-size:.8rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px">New Campaign</div>
+      <div class="form-grid" style="margin-bottom:12px">
+        <div>
+          <label class="label">Send To</label>
+          <select class="input" id="camp-segment-select" onchange="onCampSegmentChange()">
+            <option value="__all__">All active customers</option>
+            <option value="__selected__" id="camp-selected-opt" style="display:none">Selected customers (0)</option>
+          </select>
+        </div>
+        <div>
+          <label class="label">Recipients</label>
+          <div style="padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:.85rem">
+            <span id="camp-recipient-count" style="color:var(--accent2);font-weight:700">0</span>
+            <span class="muted"> active contacts</span>
+          </div>
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="label">Message <span class="muted">(use {first_name} or {name} for personalisation)</span></label>
+        <textarea class="input" id="camp-message" rows="4" oninput="onCampMessageInput()" placeholder="Hi {first_name}, thanks for visiting! Come back this week for 10% off. Show this SMS at checkout. Reply STOP to opt out."></textarea>
+        <div class="char-count" id="camp-char">0 / 160</div>
+      </div>
+      <div class="form-row" style="background:var(--surface2);border-radius:6px;padding:10px">
+        <div class="label" style="margin-bottom:4px">Preview (first recipient)</div>
+        <div id="camp-preview" style="font-size:.83rem;white-space:pre-wrap;min-height:18px"></div>
+      </div>
+      <div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:6px;padding:10px;font-size:.78rem;color:var(--warn);margin-bottom:12px">
+        ⚠ Include opt-out instructions (e.g. "Reply STOP to opt out") — required by Australian Spam Act 2003.
+      </div>
+
+      <!-- Cost + safety bar -->
+      <div id="camp-safety-bar" style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+        <div style="font-size:.82rem">
+          Estimated cost: <strong id="camp-cost-estimate" style="color:var(--accent2)">—</strong>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div id="camp-limit-warning" style="display:none;font-size:.78rem;color:var(--danger);font-weight:600">⚠ Over send limit</div>
+          <button class="btn btn-ghost btn-sm" id="camp-test-btn" onclick="sendTestSMS()">📱 Send Test</button>
+        </div>
+      </div>
+
+      <!-- Hard confirm input (shown only when over limit) -->
+      <div id="camp-hard-confirm" style="display:none;margin-bottom:12px">
+        <div style="background:rgba(255,92,92,.08);border:1px solid rgba(255,92,92,.25);border-radius:8px;padding:12px">
+          <div style="font-size:.82rem;color:var(--danger);margin-bottom:8px">
+            ⛔ You are about to send to <strong id="camp-confirm-count">0</strong> recipients. Type the number below to confirm:
+          </div>
+          <input class="input" id="camp-confirm-input" type="number" placeholder="Type recipient count to unlock" oninput="onConfirmInput()">
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn btn-ghost" onclick="closeCampaignCompose()">Cancel</button>
+        <button class="btn btn-primary" id="camp-send-btn" onclick="sendSegmentCampaign()">📤 Send Campaign</button>
+      </div>
+    </div>
+
+    <h3 style="font-size:.95rem;font-weight:600;margin-bottom:12px;color:var(--muted)">History</h3>
+    <div class="card" style="padding:0;overflow:hidden">
+      <table><thead><tr>
+        <th>Date</th><th>Sent To</th><th>Message</th><th>Recipients</th><th>Sender</th><th></th>
+      </tr></thead>
+      <tbody id="camp-table"></tbody></table>
+    </div>
+  </div>
+
+  <!-- SEGMENTS -->
+  <div id="page-segments" class="page">
+    <div class="fb">
+      <h2>Segments</h2>
+      <div class="flex">
+        <button class="btn btn-ghost" onclick="resetSegments()">↺ Reset to Defaults</button>
+        <button class="btn btn-primary" onclick="openSegmentModal()">+ New Segment</button>
+      </div>
+    </div>
+    <p class="muted" style="margin-bottom:16px">Customers are matched to the <strong style="color:var(--text)">first segment</strong> whose conditions they meet. Use ↑↓ to change priority order.</p>
+    <div class="card-grid" id="seg-stats"></div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <table><thead><tr>
+        <th style="width:36px">#</th>
+        <th>Name</th>
+        <th>Conditions</th>
+        <th style="width:80px;text-align:center">Mode</th>
+        <th></th>
+      </tr></thead>
+      <tbody id="seg-list"></tbody></table>
+    </div>
+  </div>
+
+  <!-- AUTOMATIONS -->
+  <div id="page-automations" class="page">
+    <div class="fb">
+      <div>
+        <h2>Automations</h2>
+        <div class="muted" style="margin-top:-10px;margin-bottom:16px">
+          Triggered messages sent automatically to customers based on behaviour.
+          Daily run at 5pm Perth time — loyalty and win-back automations reset per visit cycle; welcome and birthday use one-time or yearly rules.
+        </div>
+      </div>
+    </div>
+    <div id="auto-cards"></div>
+    <div id="sms-log-section"></div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div id="page-settings" class="page">
+    <h2>Settings</h2>
+    <div class="card" style="max-width:540px">
+      <div class="form-row">
+        <label class="label">Square Access Token</label>
+        <input class="input" id="set-sq-token" type="password" placeholder="EAAAl…">
+        <div class="muted" style="margin-top:4px">From Square Developer Dashboard → Applications → your app → Production</div>
+      </div>
+      <div class="form-row">
+        <label class="label">Square Webhook Signature Secret</label>
+        <input class="input" id="set-sq-webhook-secret" type="text" placeholder="Paste signature key from Square Developer Dashboard" autocomplete="off" style="font-family:monospace;letter-spacing:.05em">
+        <div class="muted" style="margin-top:4px">Square Developer Dashboard → Webhooks → your subscription → Signature key. Webhook URL: <code id="webhook-url-display"></code></div>
+      </div>
+      <hr style="border-color:var(--border);margin:16px 0">
+      <div class="form-row">
+        <label class="label">Cellcast API Key</label>
+        <input class="input" id="set-cellcast-key" type="password" placeholder="Your Cellcast API key">
+        <div class="muted" style="margin-top:4px">From your Cellcast account → API Settings</div>
+      </div>
+      <div class="form-row">
+        <label class="label">SMS Sender Type</label>
+        <select class="input" id="set-sender-type" onchange="onSenderTypeChange()">
+          <option value="shared">Shared Number (customers can reply STOP)</option>
+          <option value="name">Business Name (one-way, no replies)</option>
+        </select>
+      </div>
+      <div id="set-sender-name-row" class="form-row" style="display:none">
+        <label class="label">Business Name (max 11 chars)</label>
+        <input class="input" id="set-cellcast-sender" placeholder="e.g. Woodpeckers" maxlength="11">
+        <div class="muted" style="margin-top:4px">Shown as the sender. Alphanumeric only. Customers cannot reply.</div>
+      </div>
+      <hr style="border-color:var(--border);margin:16px 0">
+      <div class="form-row">
+        <label class="label">Test Phone Number</label>
+        <input class="input" id="set-test-phone" placeholder="+61400000000">
+        <div class="muted" style="margin-top:4px">Your number — used by "Send Test" to preview a campaign before sending to everyone.</div>
+      </div>
+      <div class="form-row">
+        <label class="label">Feedback Page Base URL</label>
+        <input class="input" id="set-feedback-base-url" placeholder="https://crm.woodpeckers.pizza">
+        <div class="muted" style="margin-top:4px">Public URL of this server — used to build the feedback link sent in SMS.</div>
+      </div>
+      <div class="form-row">
+        <label class="label">Campaign Send Limit (max recipients per send)</label>
+        <input class="input" id="set-send-limit" type="number" min="1" placeholder="500">
+        <div class="muted" style="margin-top:4px">Campaigns over this number require typing the count to confirm. Leave blank for no limit.</div>
+      </div>
+      <div class="form-row">
+        <label class="label">SMS Cost per Message (AUD cents)</label>
+        <input class="input" id="set-sms-cost" type="number" min="1" placeholder="9">
+        <div class="muted" style="margin-top:4px">Used to estimate campaign cost before sending. Default: 9¢.</div>
+      </div>
+      <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+
+      <div style="margin-top:20px;background:rgba(78,157,255,.07);border:1px solid rgba(78,157,255,.2);border-radius:8px;padding:14px 16px">
+        <div style="font-size:.82rem;font-weight:600;margin-bottom:8px;color:var(--accent)">Active SMS Safeguards</div>
+        <ul style="margin:0;padding-left:18px;font-size:.82rem;line-height:1.8;color:var(--text)">
+          <li><strong>Sending hours:</strong> SMS can only be sent between 9 AM and 9 PM Perth time (AWST). Sends outside this window are blocked entirely.</li>
+          <li><strong>Opt-out filter:</strong> Any recipient who replied STOP is permanently excluded from all campaigns and automations.</li>
+          <li><strong>7-day frequency cap:</strong> A customer who already received a campaign in the past 7 days will not receive another one.</li>
+          <li><strong>Deduplication:</strong> If the same phone number appears more than once in a batch, it is only sent to once.</li>
+          <li><strong>AU phone validation:</strong> Only valid Australian mobile numbers (+61 followed by exactly 9 digits) can receive SMS. Customers with missing, malformed, or non-AU numbers are silently skipped across all send paths (campaigns, automations, and feedback).</li>
+          <li><strong>Campaign send limit:</strong> If a campaign targets more recipients than the limit set above, the Send button is disabled until you manually type the exact count to confirm. <span id="safeguard-limit-note" class="muted"></span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:24px">
+      <div class="fb" style="margin-bottom:12px">
+        <h3 style="margin:0">Sync History</h3>
+        <button class="btn btn-ghost btn-sm" onclick="renderSyncLogs()">↻ Refresh</button>
+      </div>
+      <div id="sync-log-list">
+        <div class="muted" style="text-align:center;padding:24px">Loading…</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:24px">
+      <div class="fb" style="margin-bottom:12px">
+        <h3 style="margin:0">Cellcast Inbound SMS Payloads</h3>
+        <button class="btn btn-ghost btn-sm" onclick="renderSmsPayloads()">↻ Refresh</button>
+      </div>
+      <div class="muted" style="font-size:.8rem;margin-bottom:12px">Last 100 inbound payloads received from Cellcast. Inbound webhook URL: <code>https://crm.woodpeckers.pizza/sms-inbound</code></div>
+      <div id="sms-payload-list">
+        <div class="muted" style="text-align:center;padding:24px">Loading…</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:24px">
+      <div class="fb" style="margin-bottom:12px">
+        <h3 style="margin:0">Square Webhook Payloads</h3>
+        <button class="btn btn-ghost btn-sm" onclick="renderSquarePayloads()">↻ Refresh</button>
+      </div>
+      <div id="square-payload-list">
+        <div class="muted" style="text-align:center;padding:24px">Loading…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FEEDBACK -->
+  <div id="page-feedback" class="page">
+    <div class="fb">
+      <h2>Feedback Inbox</h2>
+      <button class="btn btn-ghost btn-sm" onclick="renderFeedback()">↻ Refresh</button>
+    </div>
+    <!-- Auto feedback card -->
+    <div class="card" id="fb-auto-card"></div>
+
+    <!-- Send card -->
+    <div class="card" id="fb-send-card">
+      <div style="font-size:.8rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px">Send Feedback SMS</div>
+      <div class="form-grid" style="margin-bottom:12px">
+        <div>
+          <label class="label">Customers whose last visit was</label>
+          <input class="input" type="date" id="fb-since-date" onchange="refreshFbEligible()">
+        </div>
+        <div>
+          <label class="label">Selected recipients</label>
+          <div style="padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:.85rem">
+            <span id="fb-eligible-count" style="color:var(--accent2);font-weight:700">0</span>
+            <span id="fb-eligible-label" class="muted"> customers</span>
+          </div>
+        </div>
+      </div>
+      <div style="position:relative;margin-bottom:8px">
+        <input class="input" type="text" id="fb-manual-search" placeholder="Add customer by name or phone…"
+          oninput="fbSearchCustomers(this.value)"
+          onblur="setTimeout(()=>{const r=document.getElementById('fb-search-results');if(r)r.style.display='none'},150)"
+          autocomplete="off">
+        <div id="fb-search-results" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:20;background:var(--surface);border:1px solid var(--border);border-top:none;border-radius:0 0 6px 6px;max-height:200px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.2)"></div>
+      </div>
+      <div id="fb-eligible-list" style="margin-bottom:12px;max-height:220px;overflow-y:auto;display:none;border:1px solid var(--border);border-radius:6px"></div>
+      <div class="form-row">
+        <label class="label">Message template &nbsp;<span class="muted">— use {name} for customer name, {link} for the feedback link</span></label>
+        <textarea class="input" id="fb-msg-template" rows="3" oninput="updateMsgPreview();saveFbTemplate()"></textarea>
+        <div class="char-count" id="fb-char-count">0 / 160</div>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:.83rem;margin-bottom:12px;white-space:pre-wrap;color:var(--muted)" id="fb-msg-preview"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.85rem">
+          <span class="toggle"><input type="checkbox" id="fb-test-mode" onchange="onFbTestModeChange()"><span class="toggle-track"></span></span>
+          Test mode <span class="muted" style="font-size:.78rem">— SMS goes to your test phone only</span>
+        </label>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" onclick="refreshFbEligible()">↻ Refresh</button>
+          <button class="btn btn-primary" id="fb-send-btn" onclick="sendFeedbackSMS()">📤 Send Feedback SMS</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-grid" id="fb-stats"></div>
+    <div class="segment-bar" id="fb-filters">
+      <button class="segment-btn active" data-fb="all"        onclick="setFbFilter('all',this)">All</button>
+      <button class="segment-btn"        data-fb="5star"      onclick="setFbFilter('5star',this)">⭐ 5 Stars</button>
+      <button class="segment-btn"        data-fb="low"        onclick="setFbFilter('low',this)">Below 5</button>
+      <button class="segment-btn"        data-fb="no-review"  onclick="setFbFilter('no-review',this)">5★ — No Google Review</button>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="table-scroll">
+        <table id="fb-table" style="min-width:700px">
+          <thead><tr>
+            <th>Date</th>
+            <th>Customer</th>
+            <th>Phone</th>
+            <th>Rating</th>
+            <th>Remarks</th>
+            <th>Google Review</th>
+          </tr></thead>
+          <tbody id="fb-tbody"></tbody>
+        </table>
+      </div>
+      <div id="fb-empty" style="display:none;text-align:center;padding:40px;color:var(--muted)">No feedback submissions yet.</div>
+    </div>
+  </div>
+
+  <!-- REPLIES -->
+  <div id="page-replies" class="page">
+    <div style="display:flex;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);flex-shrink:0">
+      <h2 style="margin:0;font-size:1.1rem">SMS Conversations</h2>
+      <button class="btn btn-ghost btn-sm" onclick="loadDB().then(renderReplies)" style="margin-left:auto">↻ Refresh</button>
+    </div>
+    <div style="display:flex;flex:1;overflow:hidden;min-height:0">
+      <!-- Left: customer list -->
+      <div id="chat-list" style="width:260px;flex-shrink:0;border-right:1px solid var(--border);overflow-y:auto"></div>
+      <!-- Right: conversation thread -->
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0">
+        <div id="chat-header" style="padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0;min-height:53px"></div>
+        <div id="chat-messages" style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column"></div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- MODAL: Customer edit -->
+<div class="modal-overlay" id="modal-customer" onclick="if(event.target===this)closeModal('modal-customer')">
+  <div class="modal" style="max-width:580px">
+    <h3 id="cust-modal-title">Customer</h3>
+    <div id="cust-modal-info" style="margin-bottom:16px;background:var(--surface2);border-radius:6px;padding:12px;font-size:.83rem"></div>
+
+    <!-- Loyalty & Visits -->
+    <div style="background:rgba(78,205,164,.06);border:1px solid rgba(78,205,164,.18);border-radius:8px;padding:14px;margin-bottom:16px">
+      <div style="font-size:.72rem;font-weight:700;color:var(--accent2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">Loyalty &amp; Visits</div>
+      <div class="form-grid" style="margin-bottom:12px">
+        <div>
+          <label class="label">Loyalty Points</label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button class="btn btn-ghost btn-sm" onclick="adjustLoyalty(-10)">−10</button>
+            <input class="input" id="cust-modal-loyalty" type="number" min="0" style="text-align:center" placeholder="0">
+            <button class="btn btn-ghost btn-sm" onclick="adjustLoyalty(10)">+10</button>
+          </div>
+        </div>
+        <div>
+          <label class="label">Number of Visits</label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button class="btn btn-ghost btn-sm" onclick="adjustVisits(-1)">−</button>
+            <input class="input" id="cust-modal-visits" type="number" min="0" style="text-align:center" placeholder="0">
+            <button class="btn btn-ghost btn-sm" onclick="adjustVisits(1)">+</button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <label class="label">Last Visit</label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input class="input" id="cust-modal-lastvisit" type="date" style="flex:1">
+          <button class="btn btn-success btn-sm" onclick="logVisitToday()" style="white-space:nowrap">✓ Log Today</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <label class="label">Segment <span class="muted" style="font-weight:400">(leave blank to auto-classify)</span></label>
+      <select class="input" id="cust-modal-segment"></select>
+    </div>
+    <div class="form-row">
+      <label class="label">Tags (comma separated)</label>
+      <input class="input" id="cust-modal-tags" placeholder="VIP, Regular, Celiac…">
+    </div>
+    <div class="form-row">
+      <label class="label">Birthday</label>
+      <input class="input" id="cust-modal-birthday" type="date" style="max-width:200px">
+    </div>
+    <div class="form-row">
+      <label class="label">Internal Note</label>
+      <textarea class="input" id="cust-modal-note" placeholder="Any notes about this customer…"></textarea>
+    </div>
+    <div class="form-row" id="cust-modal-chat-wrap" style="display:none">
+      <label class="label">SMS History</label>
+      <div id="cust-modal-chat" style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;font-size:.82rem;padding:4px 0"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-customer')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveCustModal()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Segment editor -->
+<div class="modal-overlay" id="modal-segment" onclick="if(event.target===this)closeModal('modal-segment')">
+  <div class="modal" style="max-width:560px">
+    <h3 id="seg-modal-title">New Segment</h3>
+
+    <div class="form-row">
+      <label class="label">Segment Name</label>
+      <input class="input" id="seg-modal-name" placeholder="e.g. High Spender">
+    </div>
+
+    <div class="form-row">
+      <label class="label">Colour</label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <div id="seg-color-swatches" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+        <input type="color" id="seg-modal-color-input" style="width:32px;height:32px;border:none;background:none;cursor:pointer;padding:0" oninput="renderColorSwatches(this.value)">
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <label class="label" style="margin:0">Conditions</label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="muted" style="font-size:.75rem">Match:</span>
+          <select class="input" id="seg-modal-mode" style="width:auto;padding:3px 8px;font-size:.78rem">
+            <option value="AND">ALL (AND)</option>
+            <option value="OR">ANY (OR)</option>
+          </select>
+        </div>
+      </div>
+      <div id="seg-conditions"></div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="addConditionRow()">+ Add Condition</button>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-segment')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSegmentModal()">Save Segment</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Campaign composer -->
+<div class="modal-overlay" id="modal-compose" onclick="if(event.target===this)closeModal('modal-compose')">
+  <div class="modal" style="max-width:600px">
+    <h3>Send SMS Campaign</h3>
+    <div style="margin-bottom:12px;font-size:.82rem;color:var(--muted)">
+      Sending to <strong style="color:var(--accent)" id="compose-count">0</strong> recipients
+    </div>
+    <div class="form-row">
+      <label class="label">Message <span class="muted">(use {first_name} or {name} for personalisation)</span></label>
+      <textarea class="input" id="compose-message" rows="4" oninput="onComposeInput()" placeholder="Hi {first_name}, thanks for visiting! 🍕 Come back this week and enjoy 10% off. Show this SMS at checkout. Reply STOP to opt out."></textarea>
+      <div class="char-count" id="compose-char">0 / 160</div>
+    </div>
+    <div class="form-row" style="background:var(--surface2);border-radius:6px;padding:10px">
+      <div class="label" style="margin-bottom:4px">Preview (first recipient)</div>
+      <div id="compose-preview" style="font-size:.83rem;color:var(--text);white-space:pre-wrap;min-height:20px"></div>
+    </div>
+    <details style="margin-bottom:12px">
+      <summary style="cursor:pointer;font-size:.8rem;color:var(--muted)">Show recipient list</summary>
+      <div id="compose-recipients" style="margin-top:8px;max-height:160px;overflow-y:auto"></div>
+    </details>
+    <div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:6px;padding:10px;font-size:.78rem;color:var(--warn);margin-bottom:12px">
+      ⚠ Include opt-out instructions in your message (e.g. "Reply STOP to opt out") — required by Australian Spam Act 2003.
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-compose')">Cancel</button>
+      <button class="btn btn-primary" id="compose-send-btn" onclick="sendCampaign()">📤 Send</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Campaign view -->
+<div class="modal-overlay" id="modal-camp-view" onclick="if(event.target===this)closeModal('modal-camp-view')">
+  <div class="modal">
+    <h3>Campaign Detail</h3>
+    <div class="form-row"><span class="label">Date</span> <span id="camp-view-date"></span></div>
+    <div class="form-row"><span class="label">Sender</span> <span id="camp-view-sender"></span></div>
+    <div class="form-row">
+      <span class="label">Message</span>
+      <div id="camp-view-message" style="background:var(--surface2);border-radius:6px;padding:10px;font-size:.85rem;white-space:pre-wrap;margin-top:4px"></div>
+    </div>
+    <div class="form-row">
+      <span class="label">Recipients</span>
+      <div id="camp-view-numbers" style="margin-top:4px;max-height:180px;overflow-y:auto"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-camp-view')">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/app.js"></script>
+<script src="js/customers.js"></script>
+<script src="js/campaigns.js"></script>
+<script src="js/segments.js"></script>
+<script src="js/automations.js"></script>
+<script src="js/replies.js"></script>
+<script src="js/feedback-admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Woodpeckers Murdoch — How did we do?</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: #fff8f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 20px;
+      box-shadow: 0 4px 32px rgba(0,0,0,0.10);
+      padding: 40px 32px;
+      width: 100%;
+      max-width: 440px;
+      text-align: center;
+    }
+
+    .logo {
+      font-size: 28px;
+      font-weight: 800;
+      color: #1a1a1a;
+      letter-spacing: -0.5px;
+      margin-bottom: 4px;
+    }
+
+    .logo span { color: #1a1a1a; }
+
+    .tagline {
+      font-size: 13px;
+      color: #999;
+      margin-bottom: 32px;
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #1a1a1a;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 28px;
+    }
+
+    /* Stars */
+    .stars {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 28px;
+    }
+
+    .star {
+      font-size: 48px;
+      cursor: pointer;
+      color: #ddd;
+      transition: color 0.15s, transform 0.1s;
+      user-select: none;
+      line-height: 1;
+    }
+
+    .star:hover,
+    .star.hovered,
+    .star.selected {
+      color: #f5a623;
+    }
+
+    .star:active { transform: scale(0.9); }
+
+    /* Remarks */
+    .remarks-wrap {
+      margin-bottom: 20px;
+      display: none;
+      text-align: left;
+      animation: fadeIn 0.2s ease;
+    }
+
+    .remarks-wrap label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #444;
+      margin-bottom: 6px;
+    }
+
+    textarea {
+      width: 100%;
+      border: 1.5px solid #e0d6cc;
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 14px;
+      font-family: inherit;
+      color: #1a1a1a;
+      resize: vertical;
+      min-height: 100px;
+      background: #fffdf9;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    textarea:focus { border-color: #f5a623; }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 14px 24px;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.15s, transform 0.1s;
+      text-decoration: none;
+    }
+
+    .btn:active { transform: scale(0.98); }
+
+    .btn-primary {
+      background: #c0392b;
+      color: #fff;
+      display: none;
+      margin-bottom: 0;
+    }
+
+    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .btn-google {
+      background: #4285f4;
+      color: #fff;
+      margin-top: 16px;
+    }
+
+    .btn-google svg { flex-shrink: 0; }
+
+    /* States — only .active is visible */
+    .state { display: none !important; }
+    .state.active { display: block !important; }
+
+    .icon-big {
+      font-size: 56px;
+      margin-bottom: 16px;
+      display: block;
+    }
+
+    .thanks-title {
+      font-size: 22px;
+      font-weight: 800;
+      color: #1a1a1a;
+      margin-bottom: 8px;
+    }
+
+    .thanks-sub {
+      font-size: 15px;
+      color: #555;
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
+
+    .review-note {
+      font-size: 12px;
+      color: #aaa;
+      margin-top: 12px;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+
+  <!-- Rating state -->
+  <div id="state-rating" class="state">
+    <div class="logo">Woodpeckers <span>Murdoch</span></div>
+    <div class="tagline">Fresh pizza, real feedback</div>
+    <h1>How was your experience?</h1>
+    <p class="subtitle">Tap a star to rate your order</p>
+
+    <div class="stars" id="stars">
+      <span class="star" data-v="1">★</span>
+      <span class="star" data-v="2">★</span>
+      <span class="star" data-v="3">★</span>
+      <span class="star" data-v="4">★</span>
+      <span class="star" data-v="5">★</span>
+    </div>
+
+    <div class="remarks-wrap" id="remarks-wrap">
+      <label for="remarks">What could we do better?</label>
+      <textarea id="remarks" placeholder="Tell us what happened and we'll make it right…"></textarea>
+    </div>
+
+    <button class="btn btn-primary" id="btn-submit">Submit Feedback</button>
+  </div>
+
+  <!-- 5-star thank you -->
+  <div id="state-thanks-5" class="state">
+    <span class="icon-big">🎉</span>
+    <div class="thanks-title">So glad you loved it!</div>
+    <p class="thanks-sub">Would you mind leaving us a quick Google review? It really helps us grow and means the world to our team.</p>
+    <a class="btn btn-google" id="btn-google" href="#" target="_blank" rel="noopener">
+      <svg width="20" height="20" viewBox="0 0 48 48" fill="none"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.2l6.7-6.7C35.8 2.3 30.2 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.8 6C12.3 13.2 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.2-.4-4.7H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4 7.1-10 7.1-17.3z"/><path fill="#FBBC05" d="M10.5 28.7A14.7 14.7 0 0 1 9.5 24c0-1.6.3-3.2.8-4.7l-7.8-6A24 24 0 0 0 0 24c0 3.9.9 7.6 2.7 10.8l7.8-6.1z"/><path fill="#34A853" d="M24 48c6.2 0 11.5-2 15.3-5.5l-7.5-5.8c-2 1.4-4.7 2.3-7.8 2.3-6.3 0-11.7-4.2-13.5-9.9l-7.8 6.1C6.6 42.6 14.6 48 24 48z"/></svg>
+      Leave a Google Review
+    </a>
+    <p class="review-note">Opens Google in a new tab</p>
+  </div>
+
+  <!-- <5 star thank you -->
+  <div id="state-thanks-low" class="state">
+    <span class="icon-big">🙏</span>
+    <div class="thanks-title">Thank you for letting us know</div>
+    <p class="thanks-sub">We've received your feedback and will use it to improve. We hope to do better next time!</p>
+  </div>
+
+  <!-- Already used -->
+  <div id="state-used" class="state">
+    <span class="icon-big">✅</span>
+    <div class="thanks-title">Already submitted</div>
+    <p class="thanks-sub">You've already shared your feedback — thank you! We really appreciate it.</p>
+  </div>
+
+  <!-- Invalid / expired -->
+  <div id="state-invalid" class="state">
+    <span class="icon-big">🔗</span>
+    <div class="thanks-title">Link not recognised</div>
+    <p class="thanks-sub">This feedback link is invalid or has expired. Please contact us directly if you need help.</p>
+  </div>
+
+  <!-- Loading -->
+  <div id="state-loading" class="state active" style="color:#aaa;font-size:14px;padding:20px 0;">
+    Checking your link…
+  </div>
+
+</div>
+
+<script>
+  const token = new URLSearchParams(location.search).get('t');
+
+  function show(id) {
+    document.querySelectorAll('.state').forEach(el => el.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+
+  // Validate token on load
+  async function init() {
+    if (!token) { show('state-invalid'); return; }
+    try {
+      const r = await fetch('/api/feedback/check?t=' + encodeURIComponent(token));
+      const j = await r.json();
+      if (!j.ok) { show(j.reason === 'used' ? 'state-used' : 'state-invalid'); return; }
+    } catch (e) { show('state-invalid'); return; }
+    show('state-rating');
+    initStars();
+  }
+
+  // Star interaction
+  let selected = 0;
+
+  function initStars() {
+    const stars = document.querySelectorAll('.star');
+    const remarksWrap = document.getElementById('remarks-wrap');
+    const btnSubmit   = document.getElementById('btn-submit');
+
+    function paint(n, cls) {
+      stars.forEach((s, i) => {
+        s.classList.toggle(cls, i < n);
+      });
+    }
+
+    stars.forEach(star => {
+      star.addEventListener('mouseenter', () => paint(Number(star.dataset.v), 'hovered'));
+      star.addEventListener('mouseleave', () => paint(0, 'hovered'));
+      star.addEventListener('click', () => {
+        selected = Number(star.dataset.v);
+        paint(selected, 'selected');
+        remarksWrap.style.display  = selected < 5 ? 'block' : 'none';
+        btnSubmit.style.display    = 'block';
+      });
+    });
+
+    btnSubmit.addEventListener('click', submit);
+  }
+
+  async function submit() {
+    const btnSubmit = document.getElementById('btn-submit');
+    const remarks   = document.getElementById('remarks')?.value.trim() || '';
+    if (!selected) return;
+
+    btnSubmit.disabled    = true;
+    btnSubmit.textContent = 'Sending…';
+
+    try {
+      await fetch('/api/feedback', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ token, rating: selected, remarks }),
+      });
+    } catch (e) { /* non-fatal — show thanks regardless */ }
+
+    if (selected === 5) {
+      document.getElementById('btn-google').href = '/api/feedback/redirect?t=' + encodeURIComponent(token);
+      show('state-thanks-5');
+    } else {
+      show('state-thanks-low');
+    }
+  }
+
+  init();
+</script>
+
+</body>
+</html>
