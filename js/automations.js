@@ -91,6 +91,62 @@ function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// ── Dual-template queue helpers (win-back / last_chance) ──────────────────────
+function buildDualQueueSections(auto, rewardQueue, missYouQueue) {
+  function section(customers, variant, label) {
+    if (!customers.length) {
+      return `<div style="margin-top:10px;font-size:.78rem;color:var(--muted);padding:4px 0">${label}: none in queue.</div>`;
+    }
+    const rows = customers.slice(0, 100).map(c => {
+      const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || '?';
+      return `<div class="auto-queue-row-${auto.id}-${variant}" data-search="${escHtml((name + ' ' + c.phone).toLowerCase())}"
+        style="font-size:.78rem;padding:5px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="checkbox" class="auto-queue-chk-${auto.id}" data-phone="${escHtml(c.phone)}" checked onchange="onQueueCheckChange('${auto.id}')">
+        <span style="font-weight:500">${escHtml(name)}</span>
+        <span class="muted">${escHtml(c.phone)}</span>
+        ${c.loyaltyPoints != null ? `<span class="badge bg">${c.loyaltyPoints} pts</span>` : ''}
+        ${c.visits        != null ? `<span class="muted">${c.visits} visits</span>` : ''}
+        ${c.lastVisit              ? `<span class="muted">last: ${fmtDate(c.lastVisit)}</span>` : ''}
+      </div>`;
+    }).join('') + (customers.length > 100 ? `<div class="muted" style="padding:6px 0;font-size:.75rem">…and ${customers.length - 100} more (showing first 100)</div>` : '');
+    return `
+      <div style="margin-top:10px">
+        <div style="font-size:.78rem;font-weight:600;color:var(--muted);margin-bottom:4px;display:flex;justify-content:space-between;align-items:center">
+          <span>${label} (${customers.length})</span>
+          <button class="btn btn-ghost btn-sm" onclick="toggleAutoQueue('${auto.id}-${variant}')">▾ Show</button>
+        </div>
+        <div id="auto-queue-${auto.id}-${variant}" style="display:none;max-height:220px;overflow-y:auto">
+          <div style="padding:4px 0 6px;border-bottom:1px solid var(--border);margin-bottom:2px">
+            <label style="font-size:.75rem;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:6px">
+              <input type="checkbox" id="auto-chk-all-${auto.id}-${variant}" checked
+                onchange="toggleSectionChecks('${auto.id}', '${variant}', this.checked)">
+              Select all
+            </label>
+          </div>
+          <input class="input" type="text" placeholder="Search name or phone…" style="margin-bottom:6px;padding:4px 8px;font-size:.78rem"
+            oninput="filterAutoQueueSection('${auto.id}', '${variant}', this.value)">
+          ${rows}
+        </div>
+      </div>`;
+  }
+  return section(rewardQueue, 'reward', '🏆 Reward message') +
+         section(missYouQueue, 'missyou', '💔 Miss you message');
+}
+
+function toggleSectionChecks(id, variant, checked) {
+  const section = document.getElementById(`auto-queue-${id}-${variant}`);
+  if (!section) return;
+  section.querySelectorAll(`.auto-queue-chk-${id}`).forEach(cb => cb.checked = checked);
+  onQueueCheckChange(id);
+}
+
+function filterAutoQueueSection(id, variant, term) {
+  const q = term.trim().toLowerCase();
+  document.querySelectorAll(`.auto-queue-row-${id}-${variant}`).forEach(row => {
+    row.style.display = (!q || row.dataset.search.includes(q)) ? '' : 'none';
+  });
+}
+
 // ── Render ─────────────────────────────────────────────────────────────────────
 function renderAutomations() {
   const page = document.getElementById('auto-cards');
@@ -108,6 +164,10 @@ function renderAutomations() {
 
 function buildAutoCard(auto) {
   const queue       = getAutomationQueue(auto);
+  const isDual      = auto.id === 'winback' || auto.id === 'last_chance';
+  const rewardThresh  = (auto.config && auto.config.rewardThreshold) || 5;
+  const rewardQueue   = isDual ? queue.filter(c => (c.loyaltyPoints || 0) >= rewardThresh) : [];
+  const missYouQueue  = isDual ? queue.filter(c => (c.loyaltyPoints || 0) <  rewardThresh) : [];
   const statusColor = auto.enabled ? 'var(--accent2)' : 'var(--muted)';
   const lastRunStr  = auto.lastRunAt
     ? `${fmtDate(auto.lastRunAt)} — Sent: ${(auto.lastRunStats && auto.lastRunStats.sent) || 0}, Skipped: ${(auto.lastRunStats && auto.lastRunStats.skipped) || 0}`
@@ -294,12 +354,15 @@ function buildAutoCard(auto) {
         <div class="fb">
           <div style="font-size:.82rem">
             <b>${queue.length}</b> customer${queue.length !== 1 ? 's' : ''} ready
-            ${queue.length ? `<button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="toggleAutoQueue('${auto.id}')">▾ Show</button>` : ''}
+            ${isDual
+              ? `<span class="muted" style="font-size:.75rem;margin-left:6px">(🏆 ${rewardQueue.length} reward · 💔 ${missYouQueue.length} miss you)</span>`
+              : queue.length ? `<button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="toggleAutoQueue('${auto.id}')">▾ Show</button>` : ''}
           </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            ${(auto.id === 'winback' || auto.id === 'last_chance') ? `
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            ${isDual ? `
               <button class="btn btn-ghost btn-sm" onclick="sendAutoTest('${auto.id}','reward')">📱 Test 🏆</button>
               <button class="btn btn-ghost btn-sm" onclick="sendAutoTest('${auto.id}','missyou')">📱 Test 💔</button>
+              <span id="auto-sel-count-${auto.id}" class="muted" style="font-size:.75rem">${queue.length} selected</span>
             ` : `
               <button class="btn btn-ghost btn-sm" onclick="sendAutoTest('${auto.id}')">📱 Test</button>
             `}
@@ -310,32 +373,34 @@ function buildAutoCard(auto) {
           </div>
         </div>
 
-        <div id="auto-queue-${auto.id}" style="display:none;margin-top:10px;max-height:220px;overflow-y:auto">
-          ${queue.length === 0
-            ? '<div class="muted" style="font-size:.78rem;padding:8px 0">No customers currently match this automation\'s conditions.</div>'
-            : `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0 6px;border-bottom:1px solid var(--border);margin-bottom:2px">
-                <label style="font-size:.75rem;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:6px">
-                  <input type="checkbox" id="auto-chk-all-${auto.id}" checked onchange="toggleAllQueueChecks('${auto.id}', this.checked)">
-                  Select all
-                </label>
-                <span id="auto-sel-count-${auto.id}" class="muted" style="font-size:.75rem">${queue.length} selected</span>
-              </div>` +
-            `<input class="input" type="text" placeholder="Search name or phone…" style="margin-bottom:6px;padding:4px 8px;font-size:.78rem"
-                oninput="filterAutoQueue('${auto.id}', this.value)">` +
-            queue.slice(0, 100).map(c => {
-              const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || '?';
-              return `<div class="auto-queue-row-${auto.id}" data-search="${escHtml((name + ' ' + c.phone).toLowerCase())}"
-                style="font-size:.78rem;padding:5px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                <input type="checkbox" class="auto-queue-chk-${auto.id}" data-phone="${escHtml(c.phone)}" checked onchange="onQueueCheckChange('${auto.id}')">
-                <span style="font-weight:500">${escHtml(name)}</span>
-                <span class="muted">${escHtml(c.phone)}</span>
-                ${c.loyaltyPoints != null ? `<span class="badge bg">${c.loyaltyPoints} pts</span>` : ''}
-                ${c.visits        != null ? `<span class="muted">${c.visits} visits</span>` : ''}
-                ${c.lastVisit              ? `<span class="muted">last: ${fmtDate(c.lastVisit)}</span>` : ''}
-              </div>`;
-            }).join('') +
-            (queue.length > 100 ? `<div class="muted" style="padding:6px 0;font-size:.75rem">…and ${queue.length - 100} more (showing first 100)</div>` : '')}
-        </div>
+        ${isDual
+          ? buildDualQueueSections(auto, rewardQueue, missYouQueue)
+          : `<div id="auto-queue-${auto.id}" style="display:none;margin-top:10px;max-height:220px;overflow-y:auto">
+              ${queue.length === 0
+                ? '<div class="muted" style="font-size:.78rem;padding:8px 0">No customers currently match this automation\'s conditions.</div>'
+                : `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0 6px;border-bottom:1px solid var(--border);margin-bottom:2px">
+                    <label style="font-size:.75rem;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:6px">
+                      <input type="checkbox" id="auto-chk-all-${auto.id}" checked onchange="toggleAllQueueChecks('${auto.id}', this.checked)">
+                      Select all
+                    </label>
+                    <span id="auto-sel-count-${auto.id}" class="muted" style="font-size:.75rem">${queue.length} selected</span>
+                  </div>` +
+                `<input class="input" type="text" placeholder="Search name or phone…" style="margin-bottom:6px;padding:4px 8px;font-size:.78rem"
+                    oninput="filterAutoQueue('${auto.id}', this.value)">` +
+                queue.slice(0, 100).map(c => {
+                  const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || '?';
+                  return `<div class="auto-queue-row-${auto.id}" data-search="${escHtml((name + ' ' + c.phone).toLowerCase())}"
+                    style="font-size:.78rem;padding:5px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <input type="checkbox" class="auto-queue-chk-${auto.id}" data-phone="${escHtml(c.phone)}" checked onchange="onQueueCheckChange('${auto.id}')">
+                    <span style="font-weight:500">${escHtml(name)}</span>
+                    <span class="muted">${escHtml(c.phone)}</span>
+                    ${c.loyaltyPoints != null ? `<span class="badge bg">${c.loyaltyPoints} pts</span>` : ''}
+                    ${c.visits        != null ? `<span class="muted">${c.visits} visits</span>` : ''}
+                    ${c.lastVisit              ? `<span class="muted">last: ${fmtDate(c.lastVisit)}</span>` : ''}
+                  </div>`;
+                }).join('') +
+                (queue.length > 100 ? `<div class="muted" style="padding:6px 0;font-size:.75rem">…and ${queue.length - 100} more (showing first 100)</div>` : '')}
+            </div>`}
       </div>
 
       <div id="auto-result-${auto.id}" style="display:none;margin-top:10px;font-size:.82rem;padding:8px 12px;border-radius:6px;background:var(--surface2)"></div>
@@ -364,6 +429,16 @@ function onQueueCheckChange(id) {
     runBtn.disabled    = checked.length === 0;
   }
   if (allChk) allChk.checked = checked.length === total;
+  // Sync per-section select-all for dual automations
+  for (const variant of ['reward', 'missyou']) {
+    const sectionEl = document.getElementById(`auto-queue-${id}-${variant}`);
+    const sAllChk   = document.getElementById(`auto-chk-all-${id}-${variant}`);
+    if (sectionEl && sAllChk) {
+      const sSel   = sectionEl.querySelectorAll(`.auto-queue-chk-${id}:checked`).length;
+      const sTotal = sectionEl.querySelectorAll(`.auto-queue-chk-${id}`).length;
+      sAllChk.checked = sTotal > 0 && sSel === sTotal;
+    }
+  }
 }
 
 function getSelectedPhones(id) {

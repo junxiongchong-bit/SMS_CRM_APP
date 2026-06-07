@@ -1786,18 +1786,20 @@ const server = http.createServer(async (req, res) => {
 
   // ── Feedback: auto-send queue (customers with lastVisit = yesterday Perth) ──
   if (req.url === '/api/feedback-auto-queue' && req.method === 'GET') {
-    const db      = loadDB();
-    const optOuts = new Set(db.optOuts || []);
+    const db        = loadDB();
+    const optOuts   = new Set(db.optOuts || []);
     const yesterday = perthDateStr(-1);
+    const weekStart = perthDateStr(-7);
     const queue = (db.customers || []).filter(c =>
       c.phone &&
       isAuPhone(c.phone) &&
       !optOuts.has(c.phone) &&
       !c.googleReviewDone &&
-      c.lastVisit === yesterday
+      c.lastVisit >= weekStart &&
+      c.lastVisit <= yesterday
     ).map(c => ({ id: c.id, firstName: c.firstName, lastName: c.lastName, phone: c.phone, lastVisit: c.lastVisit }));
     res.writeHead(200, { 'Content-Type': 'application/json', ...CORS });
-    res.end(JSON.stringify({ ok: true, date: yesterday, queue }));
+    res.end(JSON.stringify({ ok: true, dateFrom: weekStart, dateTo: yesterday, queue }));
     return;
   }
 
@@ -2140,7 +2142,7 @@ function personalizeAutoMessage(template, customer, auto) {
 // ── AUTO LOYALTY SYNC ──────────────────────────────────────────────────────────
 // Auto-sync removed — using Square webhooks for real-time updates instead.
 
-// ── AUTOMATION DAILY JOB (9am) ─────────────────────────────────────────────────
+// ── AUTOMATION DAILY JOB (5pm Perth / 09:00 UTC) ──────────────────────────────
 async function runAllAutomations() {
   // Read settings and automation config up-front (no mutations yet)
   const initDb = loadDB();
@@ -2229,10 +2231,10 @@ async function runAllAutomations() {
 
 function scheduleAutomations() {
   const now    = new Date();
-  const next9  = new Date(now);
-  next9.setUTCHours(9, 0, 0, 0); // 9am UTC = 5pm Perth (AWST UTC+8)
-  if (next9 <= now) next9.setUTCDate(next9.getUTCDate() + 1);
-  const msUntil = next9 - now;
+  const next5pm  = new Date(now);
+  next5pm.setUTCHours(9, 0, 0, 0); // 09:00 UTC = 5pm Perth (AWST UTC+8)
+  if (next5pm <= now) next5pm.setUTCDate(next5pm.getUTCDate() + 1);
+  const msUntil = next5pm - now;
   console.log(`[Automations] First daily run in ${Math.round(msUntil / 60000)} min (at 5pm Perth time).`);
   setTimeout(() => {
     runAllAutomations();
@@ -2559,6 +2561,7 @@ async function runNightlyOrderSweep() {
         if (existing) {
           // Phone already in CRM under a different squareId — just link the new ID
           if (!existing.squareIds.includes(sid)) existing.squareIds.push(sid);
+          if (!existing.createdAt && sq.created_at) existing.createdAt = sq.created_at.split('T')[0];
           sqIdMap[sid] = existing;
         } else {
           const newCrm = {
@@ -2580,6 +2583,7 @@ async function runNightlyOrderSweep() {
         c.visits        = (c.visits || 0) + count;
         c.lifetimeSpend = (c.lifetimeSpend || 0) + spend;
         if (lastDate) { const d = lastDate.split('T')[0]; if (!c.lastVisit || d > c.lastVisit) c.lastVisit = d; }
+        if (!c.createdAt) c.createdAt = c.lastVisit || new Date().toISOString().split('T')[0];
         visitsUpdated++;
       }
 
@@ -2638,22 +2642,27 @@ async function runFeedbackAutomation() {
   if (!isWithinSendHours()) { console.log('[FeedbackAuto] Outside send hours, skipping.'); return; }
 
   const yesterday = perthDateStr(-1);
-  const today     = perthDateStr(0);
-  if (db.settings?.feedbackAutoLastRun?.startsWith(today)) {
-    console.log('[FeedbackAuto] Already ran today, skipping.');
+  const weekStart = perthDateStr(-7); // 7 days ago (inclusive)
+
+  // Only run once per week — skip if already ran within the last 7 days
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  if (db.settings?.feedbackAutoLastRun && db.settings.feedbackAutoLastRun > sevenDaysAgo) {
+    console.log('[FeedbackAuto] Already ran this week, skipping.');
     return;
   }
-  const optOuts   = new Set(db.optOuts || []);
+
+  const optOuts = new Set(db.optOuts || []);
 
   const eligible = (db.customers || []).filter(c =>
     c.phone &&
     isAuPhone(c.phone) &&
     !optOuts.has(c.phone) &&
     !c.googleReviewDone &&
-    c.lastVisit === yesterday
+    c.lastVisit >= weekStart &&
+    c.lastVisit <= yesterday
   );
 
-  if (!eligible.length) { console.log(`[FeedbackAuto] No customers with lastVisit=${yesterday}, skipping.`); return; }
+  if (!eligible.length) { console.log(`[FeedbackAuto] No customers with lastVisit ${weekStart} to ${yesterday}, skipping.`); return; }
 
   const sentAt    = new Date().toISOString();
   const newTokens = [];
@@ -2690,7 +2699,7 @@ async function runFeedbackAutomation() {
     if (!freshDb.campaigns) freshDb.campaigns = [];
     freshDb.campaigns.unshift({
       id: uid(), date: sentAt,
-      message: `Feedback request (auto, ${yesterday})`,
+      message: `Feedback request (auto, ${weekStart} to ${yesterday})`,
       sender: sender || '#SharedNum#',
       segment: 'Feedback SMS — Auto',
       recipientCount: sent,
@@ -2713,19 +2722,22 @@ async function runFeedbackAutomation() {
     freshDb.settings.feedbackAutoLastRun   = sentAt;
     freshDb.settings.feedbackAutoLastStats = { sent, skipped: eligible.length - sent, errors: errors.length };
   });
-  console.log(`[FeedbackAuto] ${yesterday}: sent ${sent}, errors ${errors.length}.`);
+  console.log(`[FeedbackAuto] ${weekStart} to ${yesterday}: sent ${sent}, errors ${errors.length}.`);
 }
 
 function scheduleFeedbackAutomation() {
   const now  = new Date();
   const next = new Date(now);
-  next.setUTCHours(9, 0, 0, 0); // 09:00 UTC = 5pm Perth AWST
-  if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
+  next.setUTCHours(2, 0, 0, 0); // 02:00 UTC = 10am Perth AWST
+  // Advance to next Sunday (UTC day 0); if today is Sunday but past 10am, go to next week
+  const daysUntilSunday = (7 - now.getUTCDay()) % 7;
+  next.setUTCDate(next.getUTCDate() + daysUntilSunday);
+  if (next <= now) next.setUTCDate(next.getUTCDate() + 7);
   const ms = next - now;
-  console.log(`[FeedbackAuto] First run in ${Math.round(ms / 60000)} min (5pm Perth).`);
+  console.log(`[FeedbackAuto] First run in ${Math.round(ms / 60000)} min (Sunday 10am Perth).`);
   setTimeout(() => {
     runFeedbackAutomation();
-    setInterval(runFeedbackAutomation, 24 * 60 * 60 * 1000);
+    setInterval(runFeedbackAutomation, 7 * 24 * 60 * 60 * 1000);
   }, ms);
 }
 scheduleFeedbackAutomation();

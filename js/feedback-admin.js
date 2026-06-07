@@ -18,6 +18,15 @@ function renderFeedback() {
 
 let _fbAutoQueue = [];
 
+function nextFeedbackSundayStr() {
+  const perthNow  = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  const day       = perthNow.getUTCDay();
+  const hour      = perthNow.getUTCHours();
+  const daysUntil = (day === 0 && hour < 10) ? 0 : (7 - day) % 7 || 7;
+  const sunDate   = new Date(Date.now() + daysUntil * 24 * 60 * 60 * 1000);
+  return sunDate.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'Australia/Perth' });
+}
+
 async function renderFeedbackAuto() {
   const card = document.getElementById('fb-auto-card');
   if (!card) return;
@@ -30,23 +39,26 @@ async function renderFeedbackAuto() {
     ? `${fmtDate(lastRun)} — Sent: ${lastStats?.sent ?? 0}, Skipped: ${lastStats?.skipped ?? 0}`
     : 'Never run';
 
-  let queueHtml = '<span class="muted" style="font-size:.78rem">Loading…</span>';
-  card.innerHTML = buildFbAutoCardHtml(enabled, statusColor, lastRunStr, _fbAutoQueue, queueHtml);
+  card.innerHTML = buildFbAutoCardHtml(enabled, statusColor, lastRunStr, _fbAutoQueue, null, null);
 
   try {
     const r = await fetch('/api/feedback-auto-queue');
     const j = await r.json();
     _fbAutoQueue = j.queue || [];
+    card.innerHTML = buildFbAutoCardHtml(enabled, statusColor, lastRunStr, _fbAutoQueue, j.dateFrom, j.dateTo);
   } catch(e) {
     _fbAutoQueue = [];
+    card.innerHTML = buildFbAutoCardHtml(enabled, statusColor, lastRunStr, _fbAutoQueue, null, null);
   }
-
-  card.innerHTML = buildFbAutoCardHtml(enabled, statusColor, lastRunStr, _fbAutoQueue);
 }
 
-function buildFbAutoCardHtml(enabled, statusColor, lastRunStr, queue) {
+function buildFbAutoCardHtml(enabled, statusColor, lastRunStr, queue, dateFrom, dateTo) {
+  const nextSend  = nextFeedbackSundayStr();
+  const rangeStr  = (dateFrom && dateTo)
+    ? `${fmtDate(dateFrom)} – ${fmtDate(dateTo)}`
+    : 'Loading…';
   const queueRows = queue.length === 0
-    ? '<div class="muted" style="font-size:.78rem;padding:8px 0">No customers with a visit yesterday.</div>'
+    ? `<div class="muted" style="font-size:.78rem;padding:8px 0">No customers with a visit between ${rangeStr}.</div>`
     : queue.slice(0, 100).map(c => {
         const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || '—';
         return `<div style="font-size:.78rem;padding:5px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center">
@@ -65,9 +77,13 @@ function buildFbAutoCardHtml(enabled, statusColor, lastRunStr, queue) {
       <span class="badge ${queue.length ? 'bg' : 'bb'}">${queue.length} in queue</span>
       <span class="muted" style="font-size:.75rem">Last run: ${lastRunStr}</span>
     </div>
-    <p class="muted" style="font-size:.82rem;margin:0 0 14px">
-      When active, sends a personalised feedback SMS daily at <strong>5pm Perth</strong> to every customer whose last visit was the day before.
+    <p class="muted" style="font-size:.82rem;margin:0 0 10px">
+      When active, sends a personalised feedback SMS every <strong>Sunday at 10am Perth</strong> to every customer whose last visit was in the previous 7 days (Sun–Sat).
     </p>
+    <div style="font-size:.82rem;margin-bottom:14px;display:flex;gap:16px;flex-wrap:wrap">
+      <span>📅 <strong>Next send:</strong> ${nextSend}</span>
+      <span class="muted">Queue covers: ${rangeStr}</span>
+    </div>
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:${queue.length ? '12px' : '0'}">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.85rem">
         <span class="toggle"><input type="checkbox" id="fb-auto-toggle" ${enabled ? 'checked' : ''} onchange="toggleFeedbackAuto(this.checked)"><span class="toggle-track"></span></span>
